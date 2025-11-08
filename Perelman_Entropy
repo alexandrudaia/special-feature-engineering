@@ -1,74 +1,24 @@
 import numpy as np
 import pandas as pd
-import time
+import hashlib
 
-def apply_perelman_entropy_to_dataframe(df, tau=1.0, epsilon=1e-12, column_name='perelman_entropy'):
-    """
-    Apply Perelman-inspired entropy to each row of a pandas DataFrame.
+def perelman_entropy_feature(df, tau=1.0, bins=256):
+    n = df.shape[1]
+    data = df.values.astype(np.int8)  # Keep as int8 for memory
+    # Hash each row to a fixed-length string
+    hashes = np.array([
+        hashlib.sha256(row.tobytes()).hexdigest()
+        for row in data
+    ])
+    # Count occurrences
+    unique, counts = np.unique(hashes, return_counts=True)
+    code_to_prob = dict(zip(unique, counts / len(data)))
+    p = np.array([code_to_prob[h] for h in hashes])
+    norm_const = (4 * np.pi * tau) ** (n / 2)
+    f = -np.log(p * norm_const)
+    entropy = f - n
+    return entropy
+# Assuming df is your DataFrame with 10 int8 columns
+entropy_feature = perelman_entropy_feature(df)
+df['perelman_entropy'] = entropy_feature
 
-    Parameters:
-    -----------
-    df : pandas.DataFrame
-        DataFrame with numerical columns
-    tau : float, default=1.0
-        Scale parameter (higher values emphasize geometric terms)
-    epsilon : float, default=1e-12
-        Small constant for numerical stability
-    column_name : str, default='perelman_entropy'
-        Name for the new entropy column
-
-    Returns:
-    --------
-    pandas.DataFrame
-        Original DataFrame with new Perelman entropy column added
-    """
-    print(f"Computing Perelman entropy for DataFrame with shape {df.shape}...")
-    start_time = time.time()
-
-    # Convert to numpy for vectorized operations
-    data = df.values.astype(np.float64)
-    data = np.abs(data) + epsilon  # Ensure all values are positive
-
-    # Normalize each row to probability distribution
-    row_sums = data.sum(axis=1, keepdims=True)
-    u = data / row_sums
-
-    # Calculate potential function f = -log(u)
-    f = -np.log(u + epsilon)
-
-    # Initialize arrays for geometric terms
-    grad_f_squared = np.zeros(data.shape[0])
-    R = np.zeros(data.shape[0])
-
-    # Calculate gradients and curvature if we have enough dimensions
-    if data.shape[1] > 1:
-        grad_f = np.gradient(f, axis=1)
-        grad_f_squared = np.sum(grad_f**2, axis=1)
-        if data.shape[1] > 2:
-            second_deriv = np.gradient(grad_f, axis=1)
-            R = np.mean(second_deriv**2, axis=1)
-
-    n = data.shape[1]
-    integrand = tau * (grad_f_squared[:, np.newaxis]/n + R[:, np.newaxis]) + f - n
-    perelman_values = np.sum(integrand * u, axis=1) / n
-
-    result_df = df.copy()
-    result_df[column_name] = perelman_values
-
-    end_time = time.time()
-    print(f"Completed in {end_time - start_time:.2f} seconds")
-    print(f"Entropy statistics - Mean: {perelman_values.mean():.6f}, "
-          f"Std: {perelman_values.std():.6f}, Range: [{perelman_values.min():.6f}, {perelman_values.max():.6f}]")
-
-    return result_df
-import pandas as pd
-import numpy as np
-
-# Create a sample DataFrame with 10,000 columns and 100 rows
-np.random.seed(42)
-data = np.random.exponential(2, (100, 10000))
-df = pd.DataFrame(data)
-
-# Apply Perelman entropy
-df_with_entropy = apply_perelman_entropy_to_dataframe(df, tau=1.0)
-print(df_with_entropy[['perelman_entropy']].head())
